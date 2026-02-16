@@ -57,13 +57,33 @@ async fn create_user(
         (StatusCode::INTERNAL_SERVER_ERROR, "database error")
     })?;
 
+    // Create a free 10-minute subscription for the user
+    sqlx::query(
+        r#"
+        INSERT INTO subscriptions (user_id, plan_id, expire_date, status)
+        VALUES ($1, $2, now() + interval '10 minutes', 'active')
+        ON CONFLICT (user_id) DO UPDATE SET 
+            expire_date = now() + interval '10 minutes',
+            status = 'active',
+            updated_at = now()
+        "#,
+    )
+    .bind(id)
+    .bind("free_trial")
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("create subscription db error: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "database error")
+    })?;
+
     let uuid: Uuid = sqlx::query_scalar("SELECT uuid FROM users WHERE id = $1")
         .bind(id)
         .fetch_one(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
-    info!("user created/updated tg_id={} uuid={}", req.tg_id, uuid);
+    info!("user created/updated tg_id={} uuid={} with 10-minute free subscription", req.tg_id, uuid);
     Ok(Json(CreateUserResponse {
         id,
         tg_id: req.tg_id,
@@ -75,6 +95,7 @@ async fn sync(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
+    println!("Received sync request");
     let secret = headers
         .get("X-Server-Secret")
         .and_then(|v| v.to_str().ok())
@@ -101,6 +122,7 @@ async fn sync(
     })?;
 
     let uuids: Vec<String> = rows.into_iter().map(|(u,)| u.to_string()).collect();
+    println!("Sync returning {} active UUIDs", uuids.len());
     Ok(Json(SyncResponse { uuids }))
 }
 
