@@ -35,7 +35,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "3333:3333"
 
   telegram_bot:
     build:
@@ -50,11 +50,11 @@ services:
 
   proxy_agent:
     build:
-      context: .
+      context: .<
       dockerfile: proxy_agent/Dockerfile
     env_file: .env
     environment:
-      CONTROL_PLANE_URL: http://control_plane:3000
+      CONTROL_PLANE_URL: http://control_plane:3333
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
